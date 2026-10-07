@@ -1,5 +1,5 @@
 // Työaikakirjaus – käyttöliittymä. Ei ulkoisia kirjastoja.
-import { initAuth, login, logout, loadProfile, cachedProfile, queueEntry, flushOutbox, outbox, computeKm, HOME, LS, diagnostics as runDiagnostics } from './lib.js';
+import { initAuth, login, logout, loadProfile, cachedProfile, queueEntry, queueDelete, flushOutbox, outbox, computeKm, HOME, LS, diagnostics as runDiagnostics } from './lib.js';
 
 const MONTHS = ['tammikuu', 'helmikuu', 'maaliskuu', 'huhtikuu', 'toukokuu', 'kesäkuu', 'heinäkuu', 'elokuu', 'syyskuu', 'lokakuu', 'marraskuu', 'joulukuu'];
 const WEEKDAYS = ['Sunnuntai', 'Maanantai', 'Tiistai', 'Keskiviikko', 'Torstai', 'Perjantai', 'Lauantai'];
@@ -168,7 +168,7 @@ let dark = (() => {
 function freshForm() {
   const n = new Date();
   return { step: 0, d: n.getDate(), m: n.getMonth() + 1, y: n.getFullYear(), sh: 8, sm: 0, eh: 16, em: 0,
-    route: [], manualKm: '', allow: null, notes: '', saved: false, savedPending: false, confirm: false, history: false };
+    route: [], manualKm: '', allow: null, notes: '', saved: false, savedPending: false, confirm: false, confirmDelete: false, history: false };
 }
 let S = freshForm();
 
@@ -184,6 +184,7 @@ function entries() {
   const p = app.profile;
   const map = new Map((p.entries || []).map((e) => [e.date, e]));
   for (const q of outbox()) {
+    if (q.delete) { map.delete(q.date); continue; }
     const [sh, sm] = q.start.split(':').map(Number);
     const [eh, em] = q.end.split(':').map(Number);
     const c = computeKm(q.route || [], p);
@@ -284,10 +285,16 @@ function mainView() {
   const nav = S.history
     ? '<div class="nav"><button type="button" class="btn secondary th" data-act="closeHistory">Takaisin kirjaukseen</button></div>'
     : `<div class="nav">${!S.saved && S.step > 0 ? `<button type="button" class="btn secondary th" data-act="back"${S.saving ? ' disabled' : ''}>Takaisin</button>` : ''}
-        <button type="button" class="btn primary" data-act="primary"${S.saving ? ' disabled aria-busy="true"' : ''}>${S.saving ? '<span class="spin" aria-hidden="true"></span>Tallennetaan…' : S.saved ? 'Uusi kirjaus' : S.step === 4 ? 'Tallenna' : 'Seuraava'}</button></div>`;
+        <button type="button" class="btn primary" data-act="primary"${S.saving ? ' disabled aria-busy="true"' : ''}>${S.saving ? `<span class="spin" aria-hidden="true"></span>${S.deleting ? 'Poistetaan…' : 'Tallennetaan…'}` : S.saved ? 'Uusi kirjaus' : S.step === 4 ? 'Tallenna' : 'Seuraava'}</button></div>`;
 
-  const saved = S.saved && !S.history ? `<div class="saved"><div class="ok">${ICON.check(52, 2.5)}</div><h1>Tallennettu</h1>
-      ${S.savedPending ? '<p class="small" style="font-size:15px;max-width:280px">Tallennettu puhelimeen. Lähetetään automaattisesti, kun yhteys toimii.</p>' : ''}</div>` : '';
+  const saved = S.saved && !S.history ? `<div class="saved"><div class="ok">${ICON.check(52, 2.5)}</div><h1>${S.deleted ? 'Poistettu' : 'Tallennettu'}</h1>
+      ${S.savedPending ? `<p class="small" style="font-size:15px;max-width:280px">${S.deleted ? 'Poisto on tallessa puhelimessa ja' : 'Tallennettu puhelimeen.'} Lähetetään automaattisesti, kun yhteys toimii.</p>` : ''}</div>` : '';
+
+  const delDialog = S.confirmDelete && !S.saved && !S.history ? `<div class="scrim"><div class="dialog th" role="alertdialog" aria-modal="true" aria-labelledby="pt" aria-describedby="pd">
+      <h2 id="pt">Poistetaanko kirjaus?</h2>
+      <p id="pd">Päivän ${esc(D.dateText)} kirjaus poistetaan kokonaan.</p>
+      <div class="row2"><button type="button" class="btn secondary th" data-act="cancelDelete">Takaisin</button>
+      <button type="button" class="btn primary dangerbtn" data-act="confirmDelete">Poista</button></div></div></div>` : '';
 
   const dialog = S.confirm && !S.saved && !S.history ? `<div class="scrim"><div class="dialog th" role="alertdialog" aria-modal="true" aria-labelledby="kt" aria-describedby="kd">
       <h2 id="kt">Kirjaus on jo tehty</h2>
@@ -307,7 +314,7 @@ function mainView() {
       <div class="title">${title ? `<h1>${esc(title)}</h1>` : ''}</div>
     </div>
     <div class="body">${content}</div>
-    ${saved}${nav}${dialog}
+    ${saved}${nav}${dialog}${delDialog}
   </div>`;
 }
 
@@ -424,6 +431,7 @@ function summaryView(D) {
     <div style="display:flex;flex-direction:column;gap:6px"><div class="label">Päiväraha</div><div class="allow">${allow}</div></div>
     <div style="display:flex;flex-direction:column;gap:6px"><label for="lisatiedot" class="label">Lisätiedot</label>
       <textarea id="lisatiedot" class="notes th" rows="4" maxlength="1000" placeholder="Kirjoita tähän esimerkiksi mitä muu ajo koskee"></textarea></div>
+    ${D.existing ? '<button type="button" class="linkbtn danger" data-act="askDelete">Poista päivän kirjaus</button>' : ''}
   </div>`;
 }
 
@@ -499,6 +507,27 @@ async function save() {
   if (r && r.error && !r.offline) toast(`${r.failed && r.failed.length ? `Kirjausta ei voitu tallentaa: ${r.error.message}` : `Kirjausta ei vielä saatu taulukkoon (${r.error.message}). Se on tallessa puhelimessa ja lähetetään automaattisesti.`}`);
 }
 
+async function removeDay() {
+  if (S.saving || S.saved) return;
+  const D = derived();
+  queueDelete(D.dateIso);
+  S.saving = true; S.deleting = true; S.confirmDelete = false;
+  render();
+  const sending = sync();
+  const r = await Promise.race([sending, new Promise((ok) => setTimeout(() => ok({ slow: true }), 12000))]);
+  S.saving = false; S.deleting = false; S.saved = true; S.deleted = true;
+  S.savedPending = outbox().some((e) => e.date === D.dateIso);
+  render();
+  if (r.slow) {
+    sending.then(() => {
+      const still = outbox().some((e) => e.date === D.dateIso);
+      if (S.saved && S.savedPending !== still) { S.savedPending = still; render(); }
+    });
+    return;
+  }
+  if (r && r.error && !r.offline) toast(r.error.code === 'needs_update' ? r.error.message : `Poistoa ei vielä saatu taulukkoon (${r.error.message}). Yritetään uudelleen automaattisesti.`);
+}
+
 const actions = {
   login: async () => {
     const input = root.querySelector('#avainlinkki');
@@ -520,6 +549,9 @@ const actions = {
   },
   cancelConfirm: () => { S.confirm = false; render(); },
   confirmSave: () => save(),
+  askDelete: () => { S.confirmDelete = true; render(); },
+  cancelDelete: () => { S.confirmDelete = false; render(); },
+  confirmDelete: () => removeDay(),
   addPlace: (id) => { if (S.route[S.route.length - 1] !== id) { S.route = [...S.route, id]; render(); } },
   undo: () => { S.route = S.route.slice(0, -1); render(); },
   clearRoute: () => { S.route = []; S.manualKm = ''; render(); },
@@ -614,7 +646,7 @@ start();
 // Päivitykset: uusi versio haetaan aina, kun sovellus tuodaan näkyviin. Kun uusi versio on asentunut,
 // sivu ladataan uudelleen heti, kun se ei keskeytä kirjausta (alkunäkymä, valmis-näkymä tai seuraava avaus).
 let updateReady = false;
-const safeToReload = () => !S.saving && (S.saved || (S.step === 0 && !S.history && !S.confirm));
+const safeToReload = () => !S.saving && (S.saved || (S.step === 0 && !S.history && !S.confirm && !S.confirmDelete));
 function reloadIfUpdated() { if (updateReady && safeToReload()) location.reload(); }
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   let controller = navigator.serviceWorker.controller;

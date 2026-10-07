@@ -33,6 +33,7 @@ function doPost(e) {
     const emp = findEmployee_(ss, cfg, req.key);
     if (req.action === 'profile') return out_({ ok: true, profile: profile_(ss, cfg, emp) });
     if (req.action === 'save') return out_({ ok: true, saved: save_(ss, cfg, emp, req.entry || {}) });
+    if (req.action === 'delete') return out_({ ok: true, deleted: delete_(ss, emp, req.date) });
     return out_({ ok: false, code: 'bad_request', message: 'Tuntematon toiminto' });
   } catch (err) {
     return out_({ ok: false, code: err.code || 'error', message: err.message || String(err) });
@@ -249,6 +250,24 @@ function save_(ss, cfg, emp, p) {
     sortSheet_(sheet);
     SpreadsheetApp.flush();
     return { date: p.date, replaced: !!existing, km: c.km, missing: c.missing.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Poistaa työntekijän oman välilehden kyseisen päivän rivin. Palauttaa false, jos päivälle ei ollut kirjausta.
+function delete_(ss, emp, date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str_(date))) throw fail_('bad_request', 'Virheellinen päivämäärä');
+  checkName_(emp.name);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sheet = ss.getSheetByName(emp.name);
+    if (!sheet) return false;
+    const rows = readEntries_(ss, sheet).filter((e) => e.date === str_(date)).map((e) => e.row).sort((a, b) => b - a);
+    rows.forEach((r) => sheet.deleteRow(r));
+    SpreadsheetApp.flush();
+    return rows.length > 0;
   } finally {
     lock.releaseLock();
   }

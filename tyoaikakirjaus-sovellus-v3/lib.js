@@ -112,6 +112,12 @@ export function queueEntry(payload) {
   list.push({ ...payload, queuedAt: Date.now() });
   LS.set('tyoaika.outbox', list);
 }
+// Poisto jonotetaan samalla tavalla; se korvaa saman päivän lähettämättömän tallennuksen.
+export function queueDelete(date) {
+  const list = outbox().filter((e) => e.date !== date);
+  list.push({ date, delete: true, queuedAt: Date.now() });
+  LS.set('tyoaika.outbox', list);
+}
 let flushing = null;
 export function flushOutbox() {
   if (flushing) return flushing;
@@ -120,11 +126,16 @@ export function flushOutbox() {
     if (!LS.get(KEY, '')) return results;
     for (const item of outbox()) {
       try {
-        const { queuedAt, ...entry } = item;
-        await api('save', { entry });
+        const { queuedAt, delete: del, ...entry } = item;
+        if (del) await api('delete', { date: item.date });
+        else await api('save', { entry });
         LS.set('tyoaika.outbox', outbox().filter((e) => !(e.date === item.date && e.queuedAt === item.queuedAt)));
         results.sent++;
       } catch (e) {
+        if (item.delete && /tuntematon toiminto/i.test(e.message)) { // taustapalvelu on vanha versio
+          results.error = err('needs_update', 'Poisto vaatii taustapalvelun päivityksen. Kirjaus poistetaan automaattisesti, kun se on tehty.');
+          break;
+        }
         if (e.code === 'bad_request') { // virheellinen kirjaus ei korjaannu uudelleenyrityksellä
           LS.set('tyoaika.outbox', outbox().filter((x) => x.queuedAt !== item.queuedAt));
           results.failed.push(item); results.error = e; continue;
