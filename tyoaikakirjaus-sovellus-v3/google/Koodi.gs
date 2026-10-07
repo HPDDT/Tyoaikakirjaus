@@ -246,11 +246,18 @@ function save_(ss, cfg, emp, p) {
     const range = sheet.getRange(r, 1, 1, COLS.length);
     range.setNumberFormats([FORMATS.map((f, i) => (f === '0' && row[i] % 1 ? '0.0' : f))]);
     range.setValues([row]);
+    sortSheet_(sheet);
     SpreadsheetApp.flush();
     return { date: p.date, replaced: !!existing, km: c.km, missing: c.missing.length };
   } finally {
     lock.releaseLock();
   }
+}
+
+// Kirjaukset päivämäärän mukaan vanhimmasta uusimpaan
+function sortSheet_(sheet) {
+  const n = sheet.getLastRow() - 1;
+  if (n > 1) sheet.getRange(2, 1, n, COLS.length).sort({ column: 1, ascending: true });
 }
 
 // ---------------------------------------------------------------- Valikko taulukossa
@@ -315,6 +322,7 @@ function paivitaKoonti() {
     const s = ss.getSheetByName(name);
     const n = s ? s.getLastRow() - 1 : 0;
     if (n < 1) continue;
+    sortSheet_(s);
     s.getRange(2, 1, n, COLS.length).copyTo(k.getRange(r, 2, n, COLS.length));
     k.getRange(r, 1, n, 1).setValues(Array.from({ length: n }, () => [name]));
     r += n; total += n;
