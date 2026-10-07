@@ -35,6 +35,28 @@ const ICON = {
 const ROW = 60, HALF = ROW / 2;
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
+// Haptinen "loksahdus" rullan jokaisella pykälällä.
+// Android (Chrome): värinä 12 ms – lyhyempää (esim. 4 ms) moni puhelin ei tunnu toistavan lainkaan.
+// iPhone (Safari 18+): Safari ei tue värinää, mutta switch-tyyppisen valintaruudun vaihto antaa järjestelmän haptisen napsun.
+const haptic = (() => {
+  let last = 0;
+  const gate = (fn) => () => { const t = performance.now(); if (t - last < 35) return; last = t; try { fn(); } catch (_) {} };
+  if (typeof navigator.vibrate === 'function') return gate(() => navigator.vibrate(12));
+  let label = null;
+  return gate(() => {
+    if (!label) {
+      label = document.createElement('label');
+      label.setAttribute('aria-hidden', 'true');
+      label.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;';
+      const inp = document.createElement('input');
+      inp.type = 'checkbox'; inp.setAttribute('switch', ''); inp.tabIndex = -1;
+      label.appendChild(inp);
+      document.body.appendChild(label);
+    }
+    label.click();
+  });
+})();
+
 class Wheel {
   constructor(el, { values, value, label, onChange }) {
     this.el = el; this.values = values; this.value = value; this.onChange = onChange;
@@ -88,7 +110,7 @@ class Wheel {
       const len = this.values.length;
       const ni = (((this.index() + n) % len) + len) % len;
       this.value = this.values[ni].v;
-      try { navigator.vibrate && navigator.vibrate(4); } catch (_) {}
+      haptic();
       this.onChange(this.value);
     }
     this.draw();
