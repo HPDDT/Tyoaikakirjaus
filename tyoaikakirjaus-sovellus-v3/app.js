@@ -230,7 +230,14 @@ function render() {
   }
   if (a.state === 'denied') { root.innerHTML = center('Ei käyttöoikeutta', a.message, '<button type="button" class="btn secondary th" style="flex:none" data-act="logout">Syötä uusi linkki</button>'); return; }
   if (a.state !== 'ready' || !app.profile) { root.innerHTML = center('Hups', a.message || 'Jokin meni vikaan.', '<button type="button" class="btn primary" data-act="reload">Yritä uudelleen</button>'); return; }
+  const oldBody = root.querySelector('.body');
+  const keepScroll = S.history && oldBody && !app.scrollHistoryEnd ? oldBody.scrollTop : null;
   root.innerHTML = mainView();
+  const body = root.querySelector('.body');
+  if (body && S.history) {
+    if (app.scrollHistoryEnd) { body.scrollTop = body.scrollHeight; app.scrollHistoryEnd = false; }
+    else if (keepScroll !== null) body.scrollTop = keepScroll;
+  }
   mountWheels();
   const notes = root.querySelector('#lisatiedot'); if (notes) notes.value = S.notes;
   const man = root.querySelector('#muuajo'); if (man) man.value = S.manualKm;
@@ -395,7 +402,7 @@ function summaryView(D) {
 }
 
 function historyView() {
-  const list = entries();
+  const list = entries().slice().reverse(); // vanhin ylimpänä, uusin alimpana
   const groups = [];
   const by = {};
   for (const e of list) {
@@ -476,7 +483,7 @@ const actions = {
   logout: () => logout(),
   reload: () => location.reload(),
   toggleDark: () => { dark = !dark; LS.set('tyoaika.dark', dark); applyTheme(); },
-  toggleHistory: () => { S.history = !S.history; S.confirm = false; render(); },
+  toggleHistory: () => { S.history = !S.history; S.confirm = false; app.scrollHistoryEnd = S.history; render(); },
   closeHistory: () => { S.history = false; render(); },
   back: () => { S.step = Math.max(0, S.step - 1); render(); },
   primary: () => {
