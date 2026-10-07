@@ -513,7 +513,7 @@ const actions = {
   closeHistory: () => { S.history = false; render(); },
   back: () => { S.step = Math.max(0, S.step - 1); render(); },
   primary: () => {
-    if (S.saved) { S = freshForm(); return render(); }
+    if (S.saved) { if (updateReady) return location.reload(); S = freshForm(); return render(); }
     if (S.step === 4) { if (derived().existing) { S.confirm = true; return render(); } return save(); }
     if (S.step === 0) prefillFromExisting();
     S.step++; render();
@@ -611,6 +611,24 @@ document.addEventListener('visibilitychange', () => document.visibilityState ===
 
 start();
 
+// Päivitykset: uusi versio haetaan aina, kun sovellus tuodaan näkyviin. Kun uusi versio on asentunut,
+// sivu ladataan uudelleen heti, kun se ei keskeytä kirjausta (alkunäkymä, valmis-näkymä tai seuraava avaus).
+let updateReady = false;
+const safeToReload = () => !S.saving && (S.saved || (S.step === 0 && !S.history && !S.confirm));
+function reloadIfUpdated() { if (updateReady && safeToReload()) location.reload(); }
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  let controller = navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const wasControlled = !!controller; // ensiasennus ei ole päivitys
+    controller = navigator.serviceWorker.controller;
+    if (wasControlled) { updateReady = true; reloadIfUpdated(); }
+  });
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') { reg.update().catch(() => {}); reloadIfUpdated(); }
+      });
+    } catch (_) {}
+  });
 }

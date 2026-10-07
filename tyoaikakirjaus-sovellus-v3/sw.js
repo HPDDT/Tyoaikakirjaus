@@ -1,6 +1,6 @@
 // Service worker: sovellus aukeaa myös ilman verkkoa. Kirjaukset jonotetaan sovelluksessa (lib.js).
 // Polut ovat suhteellisia, jotta sovellus toimii myös alikansiossa (esim. GitHub Pages: /tyoaikakirjaus/).
-const VERSION = 'tyoaika-v3.3';
+const VERSION = 'tyoaika-v3.4';
 const BASE = new URL('./', self.location).href;
 const SHELL = ['', 'index.html', 'styles.css', 'app.js', 'lib.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png'].map((p) => BASE + p);
@@ -8,7 +8,8 @@ const SHELL = ['', 'index.html', 'styles.css', 'app.js', 'lib.js', 'config.js', 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
-    await cache.addAll(SHELL);
+    // cache: 'reload' ohittaa selaimen HTTP-välimuistin, jotta uusi versio saa varmasti uudet tiedostot
+    await cache.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })));
     self.skipWaiting();
   })());
 });
@@ -28,23 +29,26 @@ self.addEventListener('fetch', (event) => {
   // Taustapalvelu (Google Apps Script) aina verkosta
   if (url.hostname.endsWith('script.google.com') || url.hostname.endsWith('googleusercontent.com')) return;
 
-  // Sivu ja asetustiedosto: verkko ensin, muuten välimuistista
-  if (req.mode === 'navigate' || url.href === BASE + 'config.js') {
-    const key = req.mode === 'navigate' ? BASE + 'index.html' : url.href;
-    event.respondWith(fetch(req, { cache: 'no-store' }).then((r) => {
-      if (r.ok) { const copy = r.clone(); caches.open(VERSION).then((c) => c.put(key, copy)); }
-      return r;
-    }).catch(() => caches.match(key)));
-    return;
-  }
-
-  // Omat tiedostot: välimuisti heti, päivitys taustalla
+  // Sovelluksen omat tiedostot: verkko ensin (aina uusin versio), ilman verkkoa välimuistista.
+  // Jos verkko ei vastaa 4 sekunnissa, käytetään välimuistia, jotta sovellus aukeaa nopeasti heikollakin yhteydellä.
   if (url.href.startsWith(BASE)) {
-    event.respondWith(caches.open(VERSION).then(async (cache) => {
-      const hit = await cache.match(req, { ignoreSearch: true });
-      const net = fetch(req).then((r) => { if (r.ok) cache.put(req, r.clone()); return r; }).catch(() => hit);
-      return hit || net;
-    }));
+    const key = req.mode === 'navigate' ? BASE + 'index.html' : url.origin + url.pathname;
+    event.respondWith((async () => {
+      const cache = await caches.open(VERSION);
+      const net = fetch(req.url, { cache: 'no-cache' }).then((r) => {
+        if (r.ok) cache.put(key, r.clone());
+        return r;
+      });
+      net.catch(() => {});
+      const timeout = new Promise((ok) => setTimeout(() => ok(null), 4000));
+      try {
+        const r = await Promise.race([net, timeout]);
+        if (r) return r;
+        return (await cache.match(key)) || (await net);
+      } catch (_) {
+        return (await cache.match(key)) || Response.error();
+      }
+    })());
     return;
   }
 
