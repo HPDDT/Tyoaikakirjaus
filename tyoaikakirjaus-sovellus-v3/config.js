@@ -2,5 +2,5 @@
 // Osoite ei ole salainen: ilman työntekijän henkilökohtaista avainta sillä ei pääse mihinkään.
 export default {
   // Apps Scriptin verkkosovelluksen osoite: Ota käyttöön → Hallinnoi käyttöönottoja → URL (päättyy /exec)
-  scriptUrl: 'TÄYTÄ-https://script.google.com/macros/s/.../exec',
+  scriptUrl: 'https://script.google.com/macros/s/…/exec',
 };
