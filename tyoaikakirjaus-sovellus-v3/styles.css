@@ -127,6 +127,12 @@ textarea.notes { width: 100%; resize: none; padding: 12px 14px; border: 2px soli
 .dialog .btn { height: 56px; font-size: 17px; flex: 1 1 0; }
 
 /* Kirjaukset */
+.histbar { display: flex; justify-content: flex-end; margin-bottom: -6px; }
+.delmode { height: 40px; padding: 0 16px; border-radius: 999px; border: 2px solid var(--danger); background: transparent; color: var(--danger); font-size: 15px; font-weight: 700; cursor: pointer; }
+.delmode.on { background: var(--danger); color: #fff; }
+.xbtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: -4px 8px -4px -2px; vertical-align: middle; border: 0; border-radius: 50%; background: var(--danger); color: #fff; cursor: pointer; flex: none; }
+.xbtn::before { content: ''; position: absolute; inset: -9px; } /* isompi kosketusalue */
+.xbtn { position: relative; }
 .hist { display: flex; flex-direction: column; gap: 16px; padding: 8px 0 16px; }
 .month { padding: 14px 8px 12px; display: flex; flex-direction: column; gap: 6px; }
 .month h2 { margin: 0 4px 4px; font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1; }
@@ -142,7 +148,6 @@ textarea.notes { width: 100%; resize: none; padding: 12px 14px; border: 2px soli
 .tr .d { font-weight: 600; }
 .pending { color: var(--accent); }
 .note { margin: 2px 6px 0; font-size: 14px; color: var(--muted); }
-.linkbtn.danger { color: var(--danger); font-weight: 600; font-size: 15px; }
 .btn.dangerbtn { background: var(--danger); color: #fff; }
 .linkbtn { background: none; border: 0; color: var(--muted); text-decoration: underline; font-size: 14px; cursor: pointer; padding: 12px; align-self: center; min-height: 44px; }
 

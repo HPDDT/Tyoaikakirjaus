@@ -19,6 +19,7 @@ const shortTime = (t) => String(t || '').replace(/:00$/, '');
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const ICON = {
+  x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   cal: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h7"/></svg>',
   sun: '<svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   moon: '<svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1C1B19" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>',
@@ -168,7 +169,7 @@ let dark = (() => {
 function freshForm() {
   const n = new Date();
   return { step: 0, d: n.getDate(), m: n.getMonth() + 1, y: n.getFullYear(), sh: 8, sm: 0, eh: 16, em: 0,
-    route: [], manualKm: '', allow: null, notes: '', saved: false, savedPending: false, confirm: false, confirmDelete: false, history: false };
+    route: [], manualKm: '', allow: null, notes: '', saved: false, savedPending: false, confirm: false, history: false, delMode: false, delDate: null };
 }
 let S = freshForm();
 
@@ -260,6 +261,8 @@ function render() {
   const oldBody = root.querySelector('.body');
   const keepScroll = S.history && oldBody && !app.scrollHistoryEnd ? oldBody.scrollTop : null;
   root.innerHTML = mainView();
+  // Ilmoitus säilyy näkyvissä, vaikka näkymä piirretään uudelleen (esim. taustalla päivittyvät kirjaukset)
+  if (app.toastEl) { const scr = root.querySelector('.screen'); if (scr) scr.appendChild(app.toastEl); }
   const body = root.querySelector('.body');
   if (body && S.history) {
     if (app.scrollHistoryEnd) { body.scrollTop = body.scrollHeight; app.scrollHistoryEnd = false; }
@@ -285,16 +288,19 @@ function mainView() {
   const nav = S.history
     ? '<div class="nav"><button type="button" class="btn secondary th" data-act="closeHistory">Takaisin kirjaukseen</button></div>'
     : `<div class="nav">${!S.saved && S.step > 0 ? `<button type="button" class="btn secondary th" data-act="back"${S.saving ? ' disabled' : ''}>Takaisin</button>` : ''}
-        <button type="button" class="btn primary" data-act="primary"${S.saving ? ' disabled aria-busy="true"' : ''}>${S.saving ? `<span class="spin" aria-hidden="true"></span>${S.deleting ? 'Poistetaan…' : 'Tallennetaan…'}` : S.saved ? 'Uusi kirjaus' : S.step === 4 ? 'Tallenna' : 'Seuraava'}</button></div>`;
+        <button type="button" class="btn primary" data-act="primary"${S.saving ? ' disabled aria-busy="true"' : ''}>${S.saving ? '<span class="spin" aria-hidden="true"></span>Tallennetaan…' : S.saved ? 'Uusi kirjaus' : S.step === 4 ? 'Tallenna' : 'Seuraava'}</button></div>`;
 
-  const saved = S.saved && !S.history ? `<div class="saved"><div class="ok">${ICON.check(52, 2.5)}</div><h1>${S.deleted ? 'Poistettu' : 'Tallennettu'}</h1>
-      ${S.savedPending ? `<p class="small" style="font-size:15px;max-width:280px">${S.deleted ? 'Poisto on tallessa puhelimessa ja' : 'Tallennettu puhelimeen.'} Lähetetään automaattisesti, kun yhteys toimii.</p>` : ''}</div>` : '';
+  const saved = S.saved && !S.history ? `<div class="saved"><div class="ok">${ICON.check(52, 2.5)}</div><h1>Tallennettu</h1>
+      ${S.savedPending ? `<p class="small" style="font-size:15px;max-width:280px">Tallennettu puhelimeen. Lähetetään automaattisesti, kun yhteys toimii.</p>` : ''}</div>` : '';
 
-  const delDialog = S.confirmDelete && !S.saved && !S.history ? `<div class="scrim"><div class="dialog th" role="alertdialog" aria-modal="true" aria-labelledby="pt" aria-describedby="pd">
+  const delDialog = S.delDate && S.history ? (() => {
+    const [y, m, d] = S.delDate.split('-').map(Number);
+    return `<div class="scrim"><div class="dialog th" role="alertdialog" aria-modal="true" aria-labelledby="pt" aria-describedby="pd">
       <h2 id="pt">Poistetaanko kirjaus?</h2>
-      <p id="pd">Päivän ${esc(D.dateText)} kirjaus poistetaan kokonaan.</p>
+      <p id="pd">${esc(cap(WEEKDAYS[new Date(y, m - 1, d).getDay()]))} ${d}.${m}.${y} kirjaus poistetaan kokonaan.</p>
       <div class="row2"><button type="button" class="btn secondary th" data-act="cancelDelete">Takaisin</button>
-      <button type="button" class="btn primary dangerbtn" data-act="confirmDelete">Poista</button></div></div></div>` : '';
+      <button type="button" class="btn primary dangerbtn" data-act="confirmDelete">Poista</button></div></div></div>`;
+  })() : '';
 
   const dialog = S.confirm && !S.saved && !S.history ? `<div class="scrim"><div class="dialog th" role="alertdialog" aria-modal="true" aria-labelledby="kt" aria-describedby="kd">
       <h2 id="kt">Kirjaus on jo tehty</h2>
@@ -431,7 +437,6 @@ function summaryView(D) {
     <div style="display:flex;flex-direction:column;gap:6px"><div class="label">Päiväraha</div><div class="allow">${allow}</div></div>
     <div style="display:flex;flex-direction:column;gap:6px"><label for="lisatiedot" class="label">Lisätiedot</label>
       <textarea id="lisatiedot" class="notes th" rows="4" maxlength="1000" placeholder="Kirjoita tähän esimerkiksi mitä muu ajo koskee"></textarea></div>
-    ${D.existing ? '<button type="button" class="linkbtn danger" data-act="askDelete">Poista päivän kirjaus</button>' : ''}
   </div>`;
 }
 
@@ -453,7 +458,7 @@ function historyView() {
     const allowText = g.full || g.half
       ? [g.full && `${g.full} × kokopäiväraha`, g.half && `${g.half} × puolipäiväraha`].filter(Boolean).join(', ') : 'ei päivärahoja';
     const rows = g.rows.map((e, i) => `<div class="tr${i % 2 ? ' zebra' : ''}" role="row">
-        <span role="cell" class="d">${esc(e.label)}${e.pending ? '<span class="pending" title="Odottaa lähetystä"> •</span>' : ''}</span>
+        <span role="cell" class="d">${S.delMode ? `<button type="button" class="xbtn" data-act="askDelete" data-arg="${e.date}" aria-label="Poista ${esc(e.label)}">${ICON.x}</button>` : ''}${esc(e.label)}${e.pending ? '<span class="pending" title="Odottaa lähetystä"> •</span>' : ''}</span>
         <span role="cell">${esc(shortTime(e.start))}–${esc(shortTime(e.end))}</span>
         <span role="cell" class="num">${fmtH(e.hours)}</span>
         <span role="cell" class="num">${fmtKm(e.km)}</span>
@@ -466,6 +471,7 @@ function historyView() {
       </div><p class="note">Päivärahat: ${allowText}</p></section>`;
   }).join('');
   return `<div class="hist">
+    ${list.length ? `<div class="histbar"><button type="button" class="delmode th${S.delMode ? ' on' : ''}" data-act="toggleDelMode" aria-pressed="${!!S.delMode}">${S.delMode ? 'Valmis' : 'Poista kirjauksia'}</button></div>` : ''}
     ${list.length === 0 ? '<p class="small" style="text-align:center;font-size:16px;margin:24px 0">Ei vielä kirjauksia.</p>' : ''}
     ${months}
     ${list.some((e) => e.pending) ? '<p class="small" style="text-align:center"><span class="pending">•</span> odottaa lähetystä (ei verkkoyhteyttä)</p>' : ''}
@@ -478,8 +484,9 @@ function toast(text) {
   const scr = root.querySelector('.screen'); if (!scr) return;
   const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = text;
   scr.appendChild(t);
+  app.toastEl = t;
   clearTimeout(app.toastTimer);
-  app.toastTimer = setTimeout(() => t.remove(), 5000);
+  app.toastTimer = setTimeout(() => { t.remove(); app.toastEl = null; }, 5000);
 }
 
 // =====================================================================
@@ -507,25 +514,16 @@ async function save() {
   if (r && r.error && !r.offline) toast(`${r.failed && r.failed.length ? `Kirjausta ei voitu tallentaa: ${r.error.message}` : `Kirjausta ei vielä saatu taulukkoon (${r.error.message}). Se on tallessa puhelimessa ja lähetetään automaattisesti.`}`);
 }
 
-async function removeDay() {
-  if (S.saving || S.saved) return;
-  const D = derived();
-  queueDelete(D.dateIso);
-  S.saving = true; S.deleting = true; S.confirmDelete = false;
+// Poisto Kirjaukset-listalta: kirjaus katoaa listalta heti ja poisto lähetetään taulukkoon (myös myöhemmin, jos ei verkkoa).
+async function removeDay(date) {
+  queueDelete(date);
+  S.delDate = null;
   render();
-  const sending = sync();
-  const r = await Promise.race([sending, new Promise((ok) => setTimeout(() => ok({ slow: true }), 12000))]);
-  S.saving = false; S.deleting = false; S.saved = true; S.deleted = true;
-  S.savedPending = outbox().some((e) => e.date === D.dateIso);
-  render();
-  if (r.slow) {
-    sending.then(() => {
-      const still = outbox().some((e) => e.date === D.dateIso);
-      if (S.saved && S.savedPending !== still) { S.savedPending = still; render(); }
-    });
-    return;
-  }
+  const [, m, d] = date.split('-').map(Number);
+  const r = await sync();
   if (r && r.error && !r.offline) toast(r.error.code === 'needs_update' ? r.error.message : `Poistoa ei vielä saatu taulukkoon (${r.error.message}). Yritetään uudelleen automaattisesti.`);
+  else if (r && r.offline) toast(`Kirjaus ${d}.${m}. poistetaan, kun yhteys toimii.`);
+  else toast(`Kirjaus ${d}.${m}. poistettu.`);
 }
 
 const actions = {
@@ -538,8 +536,8 @@ const actions = {
   logout: () => logout(),
   reload: () => location.reload(),
   toggleDark: () => { dark = !dark; LS.set('tyoaika.dark', dark); applyTheme(); },
-  toggleHistory: () => { S.history = !S.history; S.confirm = false; app.scrollHistoryEnd = S.history; render(); },
-  closeHistory: () => { S.history = false; render(); },
+  toggleHistory: () => { S.history = !S.history; S.confirm = false; S.delMode = false; app.scrollHistoryEnd = S.history; render(); },
+  closeHistory: () => { S.history = false; S.delMode = false; render(); },
   back: () => { S.step = Math.max(0, S.step - 1); render(); },
   primary: () => {
     if (S.saved) { if (updateReady) return location.reload(); S = freshForm(); return render(); }
@@ -549,9 +547,10 @@ const actions = {
   },
   cancelConfirm: () => { S.confirm = false; render(); },
   confirmSave: () => save(),
-  askDelete: () => { S.confirmDelete = true; render(); },
-  cancelDelete: () => { S.confirmDelete = false; render(); },
-  confirmDelete: () => removeDay(),
+  toggleDelMode: () => { S.delMode = !S.delMode; render(); },
+  askDelete: (date) => { S.delDate = date; render(); },
+  cancelDelete: () => { S.delDate = null; render(); },
+  confirmDelete: () => { if (S.delDate) removeDay(S.delDate); },
   addPlace: (id) => { if (S.route[S.route.length - 1] !== id) { S.route = [...S.route, id]; render(); } },
   undo: () => { S.route = S.route.slice(0, -1); render(); },
   clearRoute: () => { S.route = []; S.manualKm = ''; render(); },
@@ -646,7 +645,7 @@ start();
 // Päivitykset: uusi versio haetaan aina, kun sovellus tuodaan näkyviin. Kun uusi versio on asentunut,
 // sivu ladataan uudelleen heti, kun se ei keskeytä kirjausta (alkunäkymä, valmis-näkymä tai seuraava avaus).
 let updateReady = false;
-const safeToReload = () => !S.saving && (S.saved || (S.step === 0 && !S.history && !S.confirm && !S.confirmDelete));
+const safeToReload = () => !S.saving && (S.saved || (S.step === 0 && !S.history && !S.confirm && !S.delDate));
 function reloadIfUpdated() { if (updateReady && safeToReload()) location.reload(); }
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   let controller = navigator.serviceWorker.controller;
