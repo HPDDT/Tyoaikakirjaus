@@ -1,6 +1,6 @@
 // Service worker: sovellus aukeaa myös ilman verkkoa. Kirjaukset jonotetaan sovelluksessa (lib.js).
 // Polut ovat suhteellisia, jotta sovellus toimii myös alikansiossa (esim. GitHub Pages: /tyoaikakirjaus/).
-const VERSION = 'tyoaika-v3.2';
+const VERSION = 'tyoaika-v3.3';
 const BASE = new URL('./', self.location).href;
 const SHELL = ['', 'index.html', 'styles.css', 'app.js', 'lib.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png'].map((p) => BASE + p);

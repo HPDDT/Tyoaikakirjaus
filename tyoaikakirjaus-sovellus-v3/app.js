@@ -188,9 +188,35 @@ function entries() {
     const [eh, em] = q.end.split(':').map(Number);
     const c = computeKm(q.route || [], p);
     map.set(q.date, { date: q.date, start: q.start, end: q.end, hours: minutesBetween(sh, sm, eh, em) / 60,
-      km: Math.round((c.km + (q.manualKm || 0)) * 10) / 10, allowance: q.allowance, notes: q.notes, pending: true });
+      km: Math.round((c.km + (q.manualKm || 0)) * 10) / 10, manualKm: q.manualKm || 0, route: q.route || [], allowance: q.allowance, notes: q.notes, pending: true });
   }
   return [...map.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+// Jo kirjatulle päivälle haetaan aiemmat tiedot lomakkeelle (ajat, reitti, muu ajo, päiväraha, lisätiedot).
+// Jos käyttäjä vaihtaa päivän sellaiseen, jolla ei ole kirjausta, lomake palautuu oletuksiin.
+const BLANK = { sh: 8, sm: 0, eh: 16, em: 0, route: [], manualKm: '', allow: null, notes: '' };
+function prefillFromExisting() {
+  const iso = isoDate(S.y, S.m, S.d);
+  if (S.prefilledFor === iso) return;
+  const e = entries().find((x) => x.date === iso);
+  const t = (txt) => { const m = /^(\d{1,2}):(\d{2})$/.exec(txt || ''); return m ? [Number(m[1]), Number(m[2])] : null; };
+  if (e && t(e.start) && t(e.end)) {
+    const r5 = (v) => Math.min(55, Math.round(v / 5) * 5); // minuuttirulla on 5 min välein
+    const [sh, sm0] = t(e.start), [eh, em0] = t(e.end);
+    const sm = r5(sm0), em = r5(em0);
+    const known = new Set([HOME, ...app.profile.places.map((p) => p.id)]);
+    Object.assign(S, {
+      sh, sm, eh, em,
+      route: (e.route || []).filter((id) => known.has(id)),
+      manualKm: e.manualKm ? String(Math.round(e.manualKm)) : '',
+      allow: e.allowance || null,
+      notes: String(e.notes || '').replace(/\n?\[Puuttuva etäisyys:[^\]]*\]\s*$/, '').trim(),
+      prefilledFor: iso,
+    });
+  } else if (S.prefilledFor) {
+    Object.assign(S, BLANK, { route: [], prefilledFor: null });
+  }
 }
 
 const nameOf = (id) => (id === HOME ? 'Koti' : ((app.profile.places.find((p) => p.id === id) || {}).name || id));
@@ -489,6 +515,7 @@ const actions = {
   primary: () => {
     if (S.saved) { S = freshForm(); return render(); }
     if (S.step === 4) { if (derived().existing) { S.confirm = true; return render(); } return save(); }
+    if (S.step === 0) prefillFromExisting();
     S.step++; render();
   },
   cancelConfirm: () => { S.confirm = false; render(); },
