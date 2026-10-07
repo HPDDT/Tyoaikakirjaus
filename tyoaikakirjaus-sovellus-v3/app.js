@@ -250,8 +250,8 @@ function mainView() {
 
   const nav = S.history
     ? '<div class="nav"><button type="button" class="btn secondary th" data-act="closeHistory">Takaisin kirjaukseen</button></div>'
-    : `<div class="nav">${!S.saved && S.step > 0 ? '<button type="button" class="btn secondary th" data-act="back">Takaisin</button>' : ''}
-        <button type="button" class="btn primary" data-act="primary">${S.saved ? 'Uusi kirjaus' : S.step === 4 ? 'Tallenna' : 'Seuraava'}</button></div>`;
+    : `<div class="nav">${!S.saved && S.step > 0 ? `<button type="button" class="btn secondary th" data-act="back"${S.saving ? ' disabled' : ''}>Takaisin</button>` : ''}
+        <button type="button" class="btn primary" data-act="primary"${S.saving ? ' disabled aria-busy="true"' : ''}>${S.saving ? '<span class="spin" aria-hidden="true"></span>Tallennetaan…' : S.saved ? 'Uusi kirjaus' : S.step === 4 ? 'Tallenna' : 'Seuraava'}</button></div>`;
 
   const saved = S.saved && !S.history ? `<div class="saved"><div class="ok">${ICON.check(52, 2.5)}</div><h1>Tallennettu</h1>
       ${S.savedPending ? '<p class="small" style="font-size:15px;max-width:280px">Tallennettu puhelimeen. Lähetetään automaattisesti, kun yhteys toimii.</p>' : ''}</div>` : '';
@@ -445,12 +445,24 @@ function toast(text) {
 // Toiminnot
 // =====================================================================
 async function save() {
+  if (S.saving || S.saved) return; // estää tuplapainallukset
   const D = derived();
   queueEntry({ date: D.dateIso, start: D.startText, end: D.endText, route: S.route, manualKm: D.manual, allowance: S.allow, notes: S.notes.trim() });
-  const r = await sync();
-  S.saved = true; S.confirm = false;
+  S.saving = true; S.confirm = false;
+  render();
+  // Odotetaan taulukon kuittausta enintään 12 s; sen jälkeen kirjaus jatkaa matkaansa taustalla.
+  const sending = sync();
+  const r = await Promise.race([sending, new Promise((ok) => setTimeout(() => ok({ slow: true }), 12000))]);
+  S.saving = false; S.saved = true;
   S.savedPending = outbox().some((e) => e.date === D.dateIso);
   render();
+  if (r.slow) {
+    sending.then(() => {
+      const still = outbox().some((e) => e.date === D.dateIso);
+      if (S.saved && S.savedPending !== still) { S.savedPending = still; render(); }
+    });
+    return;
+  }
   if (r && r.error && !r.offline) toast(`${r.failed && r.failed.length ? `Kirjausta ei voitu tallentaa: ${r.error.message}` : `Kirjausta ei vielä saatu taulukkoon (${r.error.message}). Se on tallessa puhelimessa ja lähetetään automaattisesti.`}`);
 }
 
@@ -482,7 +494,7 @@ const actions = {
 
 root.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
-  if (!el || !root.contains(el)) return;
+  if (!el || !root.contains(el) || S.saving) return;
   const fn = actions[el.dataset.act];
   if (fn) fn(el.dataset.arg);
 });
@@ -514,7 +526,11 @@ async function sync() {
   if (outbox().length === 0) return { sent: 0, failed: [] };
   const r = await flushOutbox();
   if (r.sent) {
-    try { app.profile = await loadProfile(); } catch (_) {}
+    // Päivitetään omat kirjaukset taustalla – tallennuksen kuittaus ei odota tätä
+    loadProfile().then((p) => {
+      app.profile = p;
+      if ((S.history || S.saved) && !app.wheels.some((w) => w.drag || w.anim)) render();
+    }).catch(() => {});
   }
   return r;
 }
