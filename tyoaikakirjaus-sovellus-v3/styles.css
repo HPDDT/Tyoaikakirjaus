@@ -127,7 +127,9 @@ textarea.notes { width: 100%; resize: none; padding: 12px 14px; border: 2px soli
 .dialog .btn { height: 56px; font-size: 17px; flex: 1 1 0; }
 
 /* Kirjaukset */
-.histbar { display: flex; justify-content: flex-end; margin-bottom: -6px; }
+.title.histtitle { justify-content: space-between; align-items: center; gap: 12px; }
+.title.histtitle h1 { text-align: left; font-size: 40px; min-width: 0; }
+.histtitle .delmode { flex: none; height: auto; min-height: 44px; max-width: 124px; padding: 6px 14px; white-space: normal; line-height: 1.15; text-align: center; border-radius: 16px; }
 .delmode { height: 40px; padding: 0 16px; border-radius: 999px; border: 2px solid var(--danger); background: transparent; color: var(--danger); font-size: 15px; font-weight: 700; cursor: pointer; }
 .delmode.on { background: var(--danger); color: #fff; }
 .xbtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin: -4px 8px -4px -2px; vertical-align: middle; border: 0; border-radius: 50%; background: var(--danger); color: #fff; cursor: pointer; flex: none; }

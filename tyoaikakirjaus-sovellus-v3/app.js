@@ -317,7 +317,9 @@ function mainView() {
           <span class="track th"><span class="knob">${ICON.sun}${ICON.moon}</span></span></button></div>
       </div>
       <div class="segs" style="opacity:${S.history ? 0 : 1}">${segs}</div>
-      <div class="title">${title ? `<h1>${esc(title)}</h1>` : ''}</div>
+      ${S.history
+        ? `<div class="title histtitle"><h1>${esc(title)}</h1>${entries().length ? `<button type="button" class="delmode th${S.delMode ? ' on' : ''}" data-act="toggleDelMode" aria-pressed="${!!S.delMode}">${S.delMode ? 'Valmis' : 'Poista kirjauksia'}</button>` : ''}</div>`
+        : `<div class="title">${title ? `<h1>${esc(title)}</h1>` : ''}</div>`}
     </div>
     <div class="body">${content}</div>
     ${saved}${nav}${dialog}${delDialog}
@@ -471,7 +473,6 @@ function historyView() {
       </div><p class="note">Päivärahat: ${allowText}</p></section>`;
   }).join('');
   return `<div class="hist">
-    ${list.length ? `<div class="histbar"><button type="button" class="delmode th${S.delMode ? ' on' : ''}" data-act="toggleDelMode" aria-pressed="${!!S.delMode}">${S.delMode ? 'Valmis' : 'Poista kirjauksia'}</button></div>` : ''}
     ${list.length === 0 ? '<p class="small" style="text-align:center;font-size:16px;margin:24px 0">Ei vielä kirjauksia.</p>' : ''}
     ${months}
     ${list.some((e) => e.pending) ? '<p class="small" style="text-align:center"><span class="pending">•</span> odottaa lähetystä (ei verkkoyhteyttä)</p>' : ''}
